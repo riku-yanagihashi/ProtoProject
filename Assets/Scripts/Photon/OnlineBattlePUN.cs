@@ -19,7 +19,6 @@ public class OnlineBattlePUN : MonoBehaviourPunCallbacks
     private int p1Actor, p2Actor; // P1/P2のActorNumber（小さい方をP1にする固定ルール）
 
     [SerializeField] private PhotonView pv;
-
     void Start()
     {
         localActor = PhotonNetwork.LocalPlayer.ActorNumber;
@@ -71,36 +70,26 @@ public class OnlineBattlePUN : MonoBehaviourPunCallbacks
     [PunRPC]
     void RpcSubmitPickToMaster(int actor, int a, int b, PhotonMessageInfo info)
     {
+
+        Debug.Log($"[Master] recv actor={actor} picksCount={picks.Count}");
+
         if (!PhotonNetwork.IsMasterClient) return;
 
-        // 受信ログ（デバッグ用）
-        Debug.Log($"[Master] pick受信 actor={actor} a={(Element)a} b={(Element)b}");
-
-        // 受理（同じactorが2回押しても上書き）
+        // 同一actorの再送は上書き
         picks[actor] = ((Element)a, (Element)b);
 
-        // ★ここを「picks.Count>=2」に変更（人数2人前提の最小実装）
-        if (PhotonNetwork.CurrentRoom != null &&
-            PhotonNetwork.CurrentRoom.PlayerCount >= 2 &&
-            picks.Count >= 2)
+        // 人数2前提の最小版：2件届いたら解決
+        if (picks.Count >= 2)
         {
-            // 受け取った2人を actorNumber でソート → 小さい方をP1に
-            var keys = new List<int>(picks.Keys);
-            keys.Sort();
-            int p1Key = keys[0];
-            int p2Key = keys[1];
+            var keys = new List<int>(picks.Keys); keys.Sort();
+            int p1Key = keys[0], p2Key = keys[1];
+            p1Actor = p1Key; p2Actor = p2Key;
 
-            // 先で使うため、現在のP1/P2を更新しておく
-            p1Actor = p1Key;
-            p2Actor = p2Key;
-
-            // 解決
             ResolveOnMaster(picks[p1Key], picks[p2Key]);
-
-            // 次ターン用にクリア
-            picks.Clear();
+            picks.Clear(); // ★次ターンへ
         }
     }
+
 
     // --------- Masterの判定ロジック ---------
     void ResolveOnMaster((Element, Element) p1, (Element, Element) p2)
@@ -169,16 +158,11 @@ public class OnlineBattlePUN : MonoBehaviourPunCallbacks
         // BattleManagerのUIを更新（ログ＆HP）
         if (battle != null)
         {
-            battle.Log(line1);
-            battle.Log(line2);
-            // 直接書き換え（安全のため専用Setterを作ってもOK）
-            typeof(BattleManager).GetField("_playerHp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.SetValue(battle, my);
-            typeof(BattleManager).GetField("_enemyHp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.SetValue(battle, enemy);
-            typeof(BattleManager).GetField("_turn", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.SetValue(battle, newTurn);
+            // ★ 反射はやめて、専用メソッドで適用＆重複ターンを自己防衛
+            battle.ApplyNetworkResult(my, enemy, newTurn, line1, line2);
 
-            battle.UpdateUI();
-            battle.RefreshPickText();
-            battle.confirmBtn.interactable = true; // 次ターン入力可
+            // ★ すぐ入力を解放しない。ディレイ付き解放だけ呼ぶ
+            battle.OnNetworkTurnResolvedWithDelay();
         }
     }
 

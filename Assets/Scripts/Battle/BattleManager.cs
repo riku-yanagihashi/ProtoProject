@@ -32,6 +32,14 @@ public class BattleManager : MonoBehaviour
     [Header("Config")]
     public int maxHp = 20;
 
+    [Header("Flow")]
+    public float resolveShowSeconds = 0.8f;
+
+    public int LastAppliedTurn { get; private set; } = 0;
+
+    private bool _submittedThisTurn = false;
+
+
     // 状態
     private List<Element> _playerPicks = new List<Element>(2);
     private List<Element> _enemyPicks = new List<Element>(2);
@@ -98,9 +106,11 @@ public class BattleManager : MonoBehaviour
     void OnPick(Element e)
     {
         if (_playerStunned) return;
+        if (_submittedThisTurn) return; // 二重送信防止
         if (_playerPicks.Count >= 2) return;
         _playerPicks.Add(e);
         RefreshPickText();
+        confirmBtn.interactable = (_playerPicks.Count >= 2);
     }
 
     // OnDestroy() を追加（イベント解除）
@@ -119,6 +129,12 @@ public class BattleManager : MonoBehaviour
 
     void OnConfirm()
     {
+
+        Debug.Log($"[C{Photon.Pun.PhotonNetwork.LocalPlayer.ActorNumber}] Confirm pressed; picks={_playerPicks.Count}, submitted={_submittedThisTurn}");
+
+
+        if (_submittedThisTurn) return;
+
         if (!_playerStunned && _playerPicks.Count < 2)
         {
             Log("属性を2つ選んでください。");
@@ -128,10 +144,19 @@ public class BattleManager : MonoBehaviour
         // ★オンラインモード：自分の選択を送って待機
         if (net != null && net.enabled)
         {
-            net.SubmitMyPick(_playerPicks[0], _playerPicks[1]);
+            _submittedThisTurn = true;              // ★送信フラグON
+
+            var a = _playerPicks[0];
+            var b = _playerPicks[1];
+            net.SubmitMyPick(a, b);
             Log("送信しました。相手の入力を待っています…");
+
+            // 送信後は即ロック＆選択クリア（連打対策）
             confirmBtn.interactable = false;
-            return; // ← ここで終了（AIは動かさない）
+            SetElementButtonsInteractable(false);
+            _playerPicks.Clear();
+            RefreshPickText();
+            return;
         }
 
         // ▼以下はオフラインモード（AI戦）の処理
@@ -164,6 +189,15 @@ public class BattleManager : MonoBehaviour
 
         NextTurnSetup();
         NewTurn();
+    }
+
+    // 元素ボタン一括ON/OFFヘルパ
+    public void SetElementButtonsInteractable(bool v)
+    {
+        fireBtn.interactable = v;
+        waterBtn.interactable = v;
+        windBtn.interactable = v;
+        earthBtn.interactable = v;
     }
 
     bool DecideInitiative()
@@ -272,6 +306,30 @@ public class BattleManager : MonoBehaviour
         }
     }
 
+    public void ApplyNetworkResult(int myHp, int enemyHp, int newTurn, string line1, string line2)
+    {
+        // 重複/古いターンを無視
+        if (newTurn <= LastAppliedTurn)
+        {
+            Debug.Log($"[Client] ignore apply turn={newTurn} (last={LastAppliedTurn})");
+            return;
+        }
+
+        // ログ
+        if (!string.IsNullOrEmpty(line1)) Log(line1);
+        if (!string.IsNullOrEmpty(line2)) Log(line2);
+
+        // 状態反映（※ここは BattleManager 内部なので直接代入でOK）
+        _playerHp = myHp;
+        _enemyHp = enemyHp;
+        _turn = newTurn;
+
+        UpdateUI();
+        RefreshPickText();
+
+        LastAppliedTurn = newTurn;
+    }
+
     bool CheckEnd()
     {
         if (_playerHp <= 0 && _enemyHp <= 0)
@@ -359,5 +417,35 @@ public class BattleManager : MonoBehaviour
     {
         // 1=上端, 0=下端
         _autoScroll = (pos.y <= 0.001f);
+    }
+
+    // ネットワーク側が「ターン解決完了」を配信してきたら、次ターンの入力を解放
+    public void OnNetworkTurnResolved()
+    {
+
+        Debug.Log($"[C{Photon.Pun.PhotonNetwork.LocalPlayer.ActorNumber}] Turn reset");
+
+        // 次ターンの入力待ち状態にリセット
+        _submittedThisTurn = false;                
+        _playerPicks.Clear();                       // 念のため毎回クリア
+        RefreshPickText();
+
+        SetElementButtonsInteractable(true);
+        confirmBtn.interactable = false;            // 2つ選ぶまで押せない
+    }
+
+    // 次ターン解放を“少し待ってから”やるAPI
+    public void OnNetworkTurnResolvedWithDelay()
+    {
+        // Resolving中は押せないよう、明示的にロックしておく
+        SetElementButtonsInteractable(false);
+        confirmBtn.interactable = false;
+        StartCoroutine(CoEnableNextTurnAfterDelay());
+    }
+
+    private IEnumerator CoEnableNextTurnAfterDelay()
+    {
+        yield return new WaitForSeconds(resolveShowSeconds);
+        OnNetworkTurnResolved();  // ← 既存の解放処理（_submittedThisTurn=false など）
     }
 }
