@@ -40,12 +40,24 @@ public class BattleManager : MonoBehaviour
     private bool _playerHasHaste = false, _enemyHasHaste = false;
     private int _turn = 1; // 奇数:プレイヤー先手 / 偶数:敵先手
 
+
+    // シングルトン化
+    public static BattleManager instance { get; private set; }
+
+    // Photon連携用
+    public OnlineBattlePUN net;
+    void Awake()
+    {
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        instance = this;
+    }
     void Start()
     {
-        _playerHp = maxHp;
-        _enemyHp = maxHp;
-        UpdateUI();
-
+        // ★ここでは“開始しない”。UIの配線だけ残す
         fireBtn.onClick.AddListener(delegate { OnPick(Element.Fire); });
         waterBtn.onClick.AddListener(delegate { OnPick(Element.Water); });
         windBtn.onClick.AddListener(delegate { OnPick(Element.Wind); });
@@ -53,11 +65,32 @@ public class BattleManager : MonoBehaviour
         confirmBtn.onClick.AddListener(OnConfirm);
 
         if (logScroll != null)
-        {
             logScroll.onValueChanged.AddListener(OnLogScrollChanged);
-        }
 
+        // ▼これらは StartGame() に移動
+        // _playerHp = maxHp;
+        // _enemyHp = maxHp;
+        // UpdateUI();
+        // Log("バトル開始！");
+        // NewTurn();
+    }
 
+    // マッチング成功時に呼ばれる
+    public void StartGame()
+    {
+        // 何度呼ばれても同じ状態になるよう“毎回初期化”
+        _playerHp = maxHp;
+        _enemyHp = maxHp;
+        _playerPicks.Clear();
+        _enemyPicks.Clear();
+        _playerStunned = _enemyStunned = false;
+        _playerHasHaste = _enemyHasHaste = false;
+        _turn = 1;
+
+        // UI初期化
+        if (playerPickText) playerPickText.text = "選択: -";
+        if (_logBuffer != null) _logBuffer.Clear();
+        UpdateUI();
         Log("バトル開始！");
         NewTurn();
     }
@@ -77,7 +110,7 @@ public class BattleManager : MonoBehaviour
             logScroll.onValueChanged.RemoveListener(OnLogScrollChanged);
     }
 
-    void RefreshPickText()
+    public void RefreshPickText()
     {
         if (_playerPicks.Count == 0) playerPickText.text = "選択: -";
         else if (_playerPicks.Count == 1) playerPickText.text = "選択: " + _playerPicks[0].ToString();
@@ -92,6 +125,16 @@ public class BattleManager : MonoBehaviour
             return;
         }
 
+        // ★オンラインモード：自分の選択を送って待機
+        if (net != null && net.enabled)
+        {
+            net.SubmitMyPick(_playerPicks[0], _playerPicks[1]);
+            Log("送信しました。相手の入力を待っています…");
+            confirmBtn.interactable = false;
+            return; // ← ここで終了（AIは動かさない）
+        }
+
+        // ▼以下はオフラインモード（AI戦）の処理
         // 敵の選択（とりあえず固定パターン＋乱数）
         _enemyPicks.Clear();
         if (_enemyStunned)
@@ -279,13 +322,13 @@ public class BattleManager : MonoBehaviour
         Log("--- ターン " + _turn + " ---");
     }
 
-    void UpdateUI()
+    public void UpdateUI()
     {
         playerHpText.text = "HP: " + _playerHp + "/" + maxHp;
         enemyHpText.text = "HP: " + _enemyHp + "/" + maxHp;
     }
 
-    void Log(string msg)
+    public void Log(string msg)
     {
         _logBuffer.Add(msg);
         if (_logBuffer.Count > maxLogLines)
