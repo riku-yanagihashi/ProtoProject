@@ -22,6 +22,7 @@ public class BattleManager : MonoBehaviour
     public TMP_Text enemyHpText;
     public TMP_Text playerPickText;
     public TMP_Text logText;
+    public TMP_Text pickTimerText;
 
     [Header("Log Scroll")]
     public ScrollRect logScroll;          // ← インスペクタで LogScroll を割り当て
@@ -34,6 +35,10 @@ public class BattleManager : MonoBehaviour
 
     [Header("Flow")]
     public float resolveShowSeconds = 0.8f;
+    public float pickTimeLimitSeconds = 15f;
+
+    private Coroutine _pickTimerCoroutine;
+    private int _autoPickCount = 0; // 連続自動選択回数
 
     public int LastAppliedTurn { get; private set; } = 0;
 
@@ -129,6 +134,10 @@ public class BattleManager : MonoBehaviour
 
     void OnConfirm()
     {
+        // 手動選択時のみリセット
+        if (_playerPicks.Count == 2 && !(_playerPicks[0] == Element.Fire && _playerPicks[1] == Element.Fire))
+            _autoPickCount = 0;
+
 
         Debug.Log($"[C{Photon.Pun.PhotonNetwork.LocalPlayer.ActorNumber}] Confirm pressed; picks={_playerPicks.Count}, submitted={_submittedThisTurn}");
 
@@ -360,6 +369,12 @@ public class BattleManager : MonoBehaviour
         windBtn.interactable = false;
         earthBtn.interactable = false;
         confirmBtn.interactable = false;
+
+        if (_pickTimerCoroutine != null)
+            StopCoroutine(_pickTimerCoroutine);
+
+        if (pickTimerText)
+            pickTimerText.text = "";
     }
 
     void NextTurnSetup()
@@ -378,6 +393,14 @@ public class BattleManager : MonoBehaviour
     {
         RefreshPickText();
         Log("--- ターン " + _turn + " ---");
+
+        // オフライン時も制限時間タイマー開始
+        if (net == null || !net.enabled)
+        {
+            if (_pickTimerCoroutine != null)
+                StopCoroutine(_pickTimerCoroutine);
+            _pickTimerCoroutine = StartCoroutine(CoPickTimer());
+        }
     }
 
     public void UpdateUI()
@@ -422,16 +445,72 @@ public class BattleManager : MonoBehaviour
     // ネットワーク側が「ターン解決完了」を配信してきたら、次ターンの入力を解放
     public void OnNetworkTurnResolved()
     {
-
         Debug.Log($"[C{Photon.Pun.PhotonNetwork.LocalPlayer.ActorNumber}] Turn reset");
 
-        // 次ターンの入力待ち状態にリセット
-        _submittedThisTurn = false;                
-        _playerPicks.Clear();                       // 念のため毎回クリア
+        _submittedThisTurn = false;
+        _playerPicks.Clear();
         RefreshPickText();
 
         SetElementButtonsInteractable(true);
-        confirmBtn.interactable = false;            // 2つ選ぶまで押せない
+        confirmBtn.interactable = false;
+
+        // 制限時間タイマー開始
+        if (_pickTimerCoroutine != null)
+            StopCoroutine(_pickTimerCoroutine);
+        _pickTimerCoroutine = StartCoroutine(CoPickTimer());
+    }
+
+    // 制限時間タイマー
+    private IEnumerator CoPickTimer()
+    {
+        Debug.Log("CoPickTimer Start");
+        float timer = pickTimeLimitSeconds;
+        while (timer > 0f)
+        {
+            if (_submittedThisTurn)
+            {
+                if (pickTimerText) pickTimerText.text = "";
+                yield break;
+            }
+            if (pickTimerText)
+                pickTimerText.text = $"残り時間: {Mathf.CeilToInt(timer)}秒";
+            timer -= Time.deltaTime;
+            yield return null;
+        }
+
+        if (pickTimerText)
+            pickTimerText.text = "";
+
+        // 制限時間切れ：自動選択
+        Log($"制限時間切れのため自動選択（Fire+Fire）します");
+        _playerPicks.Clear();
+        _playerPicks.Add(Element.Fire);
+        _playerPicks.Add(Element.Fire);
+        confirmBtn.interactable = true;
+        _autoPickCount++;
+
+        if (_autoPickCount >= 2)
+        {
+            Log("2回連続で自動選択となったため敗北扱いになります");
+            DisableInputs();
+            Log("あなたの敗北…");
+            // ここで必要なら PhotonNetwork.Disconnect(); などを呼ぶ
+            // 例: if (net != null && net.enabled) Photon.Pun.PhotonNetwork.Disconnect();
+            yield break;
+        }
+
+        OnConfirm();
+
+        // 2回連続なら強制敗北
+        if (_autoPickCount >= 2)
+        {
+            Log("2回連続で自動選択となったため敗北扱いになります");
+            DisableInputs();
+            Log("あなたの敗北…");
+            yield break;
+        }
+
+        OnConfirm();
     }
 
     // 次ターン解放を“少し待ってから”やるAPI
