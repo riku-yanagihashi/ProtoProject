@@ -20,3 +20,6 @@ MonoBehaviour:
   - Kind: 2
     Value: 0
     Duration: 1
+  - Kind: 1
+    Value: 1
+    Duration: 0

@@ -10,16 +10,16 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 91669dde33fa3104c9bec7f89e236a57, type: 3}
-  m_Name: Quick
+  m_Name: SteamStrike
   m_EditorClassIdentifier: Assembly-CSharp::Spell
-  Id: Wn+Wn
-  DisplayNameJP: "\u4FCA\u8DB3"
-  A: 2
-  B: 2
+  Id: F+W
+  DisplayNameJP: "\u6C34\u84B8\u6C17\u653B\u6483"
+  A: 0
+  B: 1
   Effects:
-  - Kind: 4
-    Value: 0
-    Duration: 1
   - Kind: 0
+    Value: 2
+    Duration: 0
+  - Kind: 1
     Value: 1
     Duration: 0

@@ -10,16 +10,19 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 91669dde33fa3104c9bec7f89e236a57, type: 3}
-  m_Name: Quick
+  m_Name: DustStorm
   m_EditorClassIdentifier: Assembly-CSharp::Spell
-  Id: Wn+Wn
-  DisplayNameJP: "\u4FCA\u8DB3"
+  Id: Wn+E
+  DisplayNameJP: "\u5D50"
   A: 2
-  B: 2
+  B: 3
   Effects:
+  - Kind: 0
+    Value: 1
+    Duration: 0
   - Kind: 4
     Value: 0
     Duration: 1
-  - Kind: 0
+  - Kind: 3
     Value: 1
     Duration: 0
