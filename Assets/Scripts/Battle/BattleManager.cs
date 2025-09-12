@@ -104,6 +104,12 @@ public class BattleManager : MonoBehaviour
         if (playerPickText) playerPickText.text = "選択: -";
         if (_logBuffer != null) _logBuffer.Clear();
         UpdateUI();
+        
+        // 最初のターンだけ制限時間カウントを開始
+        if (_pickTimerCoroutine != null)
+            StopCoroutine(_pickTimerCoroutine);
+        _pickTimerCoroutine = StartCoroutine(CoPickTimer());
+        
         Log("バトル開始！");
         NewTurn();
     }
